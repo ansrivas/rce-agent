@@ -22,3 +22,13 @@ communication and mutual authentication of client and agent.
 Normally, only the client verifies the server's TLS certificate (cert). For additional security,
 your code should use [rce.TLSFiles](https://godoc.org/github.com/square/rce-agent#TLSFiles)
 to create Go `tls.Config` which makes the server (agent) verify the client's cert, too.
+
+### Generating protos
+---
+```
+go get -u github.com/golang/protobuf/protoc-gen-go
+go get -u google.golang.org/grpc/cmd/protoc-gen-go-grpc
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc
+export SRC_DIR=pb; export DST_DIR=pb
+protoc --proto_path=$SRC_DIR  --go-grpc_out=$DST_DIR --go_out=$DST_DIR     $SRC_DIR/rce.proto
+```
