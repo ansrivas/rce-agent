@@ -69,6 +69,9 @@ type Client interface {
 
 	// Return a list of all running command IDs.
 	Running() ([]string, error)
+
+	// Return a list of all running command IDs.
+	ListCommands() ([]string, error)
 }
 
 type client struct {
@@ -188,4 +191,20 @@ func (c *client) Running() ([]string, error) {
 	}
 
 	return ids, nil
+}
+
+func (c *client) ListCommands() ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	cmds, err := c.agent.ListCommands(ctx, &pb.Empty{})
+	if err != nil {
+		return nil, err
+	}
+
+	commands := []string{}
+	for _, cmd := range cmds.Commands {
+		commands = append(commands, cmd.Name)
+	}
+	return commands, nil
 }

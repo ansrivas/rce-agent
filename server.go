@@ -23,7 +23,7 @@ type Server interface {
 	// Stop the gRPC server gracefully.
 	StopServer() error
 
-	pb.RCEAgentServer
+	pb.UnstableRCEAgentService
 }
 
 // Internal implementation of pb.RCEAgentServer interface.
@@ -41,7 +41,7 @@ func NewServer(laddr string, tlsConfig *tls.Config, whitelist cmd.Runnable) Serv
 	// Set log flags here so other pkgs can't override in their init().
 	log.SetFlags(log.Ldate | log.Lmicroseconds | log.Lshortfile | log.LUTC)
 
-	s := &server{
+	s := server{
 		laddr:     laddr,
 		tlsConfig: tlsConfig,
 		repo:      cmd.NewRepo(),
@@ -62,9 +62,18 @@ func NewServer(laddr string, tlsConfig *tls.Config, whitelist cmd.Runnable) Serv
 	return s
 }
 
-func (s *server) StartServer() error {
+func (s server) StartServer() error {
 	// Register the RCEAgent service with the gRPC server.
-	pb.RegisterRCEAgentServer(s.grpcServer, s)
+	rceAgentService := pb.RCEAgentService{
+		Start:        s.Start,
+		Wait:         s.Wait,
+		GetStatus:    s.GetStatus,
+		Stop:         s.Stop,
+		Running:      s.Running,
+		ListCommands: s.ListCommands,
+	}
+
+	pb.RegisterRCEAgentService(s.grpcServer, &rceAgentService)
 
 	lis, err := net.Listen("tcp", s.laddr)
 	if err != nil {
@@ -79,7 +88,7 @@ func (s *server) StartServer() error {
 	return nil
 }
 
-func (s *server) StopServer() error {
+func (s server) StopServer() error {
 	s.grpcServer.GracefulStop()
 	log.Printf("server stopped on %s", s.laddr)
 	return nil
@@ -89,7 +98,7 @@ func (s *server) StopServer() error {
 // pb.RCEAgentServer interface methods
 // //////////////////////////////////////////////////////////////////////////
 
-func (s *server) Start(ctx context.Context, c *pb.Command) (*pb.ID, error) {
+func (s server) Start(ctx context.Context, c *pb.Command) (*pb.ID, error) {
 	id := &pb.ID{}
 
 	spec, err := s.whitelist.FindByName(c.Name)
@@ -112,7 +121,7 @@ func (s *server) Start(ctx context.Context, c *pb.Command) (*pb.ID, error) {
 	return id, nil
 }
 
-func (s *server) Wait(ctx context.Context, id *pb.ID) (*pb.Status, error) {
+func (s server) Wait(ctx context.Context, id *pb.ID) (*pb.Status, error) {
 	log.Printf("cmd=%s: wait", id.ID)
 	defer log.Printf("cmd=%s: wait return", id.ID)
 
@@ -135,7 +144,7 @@ func (s *server) Wait(ctx context.Context, id *pb.ID) (*pb.Status, error) {
 	return mapStatus(cmd), ctx.Err()
 }
 
-func (s *server) GetStatus(ctx context.Context, id *pb.ID) (*pb.Status, error) {
+func (s server) GetStatus(ctx context.Context, id *pb.ID) (*pb.Status, error) {
 	log.Printf("cmd=%s: status", id.ID)
 	cmd := s.repo.Get(id.ID)
 	if cmd == nil {
@@ -144,7 +153,7 @@ func (s *server) GetStatus(ctx context.Context, id *pb.ID) (*pb.Status, error) {
 	return mapStatus(cmd), nil
 }
 
-func (s *server) Stop(ctx context.Context, id *pb.ID) (*pb.Empty, error) {
+func (s server) Stop(ctx context.Context, id *pb.ID) (*pb.Empty, error) {
 	log.Printf("cmd=%s: stop", id.ID)
 
 	cmd := s.repo.Get(id.ID)
@@ -157,7 +166,7 @@ func (s *server) Stop(ctx context.Context, id *pb.ID) (*pb.Empty, error) {
 	return &pb.Empty{}, nil
 }
 
-func (s *server) Running(empty *pb.Empty, stream pb.RCEAgent_RunningServer) error {
+func (s server) Running(empty *pb.Empty, stream pb.RCEAgent_RunningServer) error {
 	log.Println("list running")
 	for _, id := range s.repo.All() {
 		if err := stream.Send(&pb.ID{ID: id}); err != nil {
@@ -165,6 +174,20 @@ func (s *server) Running(empty *pb.Empty, stream pb.RCEAgent_RunningServer) erro
 		}
 	}
 	return nil
+}
+
+func (s server) ListCommands(ctx context.Context, empty *pb.Empty) (*pb.ListCommandsResponse, error) {
+	log.Println("list running")
+	response := []*pb.Command{}
+	for _, c := range s.whitelist {
+		response = append(response, &pb.Command{
+			Name:      c.Name,
+			Arguments: c.Exec,
+		})
+	}
+	return &pb.ListCommandsResponse{
+		Commands: response,
+	}, nil
 }
 
 func notFound(id *pb.ID) error {

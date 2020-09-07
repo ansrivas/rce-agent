@@ -96,6 +96,12 @@ func main() {
 	defer client.Close() // *** Remember to close the client connection! ***
 	log.Printf("Connected")
 
+	running, err := client.ListCommands()
+	if err != nil {
+		log.Fatalf("client.ListCommands: %s", err)
+	} else {
+		log.Println(running)
+	}
 	// ----------------------------------------------------------------------
 	// Start remote command
 	// ----------------------------------------------------------------------
